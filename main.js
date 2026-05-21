@@ -279,3 +279,112 @@ ipcMain.on('stop-process', () => {
     activeProcesses.delete('current');
   }
 });
+
+// --- Deploy via clasp ---
+
+// Check deploy readiness for a project
+ipcMain.handle('deploy-check', async (_, { projectPath }) => {
+  const result = {
+    claspInstalled: false,
+    claspLoggedIn: false,
+    claspJsonExists: false,
+    scriptId: null,
+    hasChanges: false,
+    diff: '',
+    files: []
+  };
+
+  // Check clasp installed
+  try {
+    execSync('which clasp', { stdio: 'pipe' });
+    result.claspInstalled = true;
+  } catch (_) {
+    return result;
+  }
+
+  // Check clasp logged in
+  const home = require('os').homedir();
+  result.claspLoggedIn = fs.existsSync(path.join(home, '.clasprc.json'));
+
+  // Check .clasp.json exists
+  const claspJson = path.join(projectPath, '.clasp.json');
+  if (fs.existsSync(claspJson)) {
+    result.claspJsonExists = true;
+    try {
+      const config = JSON.parse(fs.readFileSync(claspJson, 'utf8'));
+      result.scriptId = config.scriptId;
+    } catch (_) {}
+  }
+
+  // Get git diff (what would be deployed)
+  try {
+    const diff = execSync('git diff --stat', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
+    const diffFull = execSync('git diff', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
+    const untracked = execSync('git ls-files --others --exclude-standard', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
+    result.hasChanges = !!(diff || untracked);
+    result.diff = diffFull || '(no uncommitted changes)';
+    result.files = diff ? diff.split('\n') : [];
+    if (untracked) {
+      result.files.push('Untracked: ' + untracked.replace(/\n/g, ', '));
+    }
+  } catch (_) {}
+
+  return result;
+});
+
+// Setup clasp for a project (create .clasp.json)
+ipcMain.handle('deploy-setup', async (_, { projectPath, scriptId }) => {
+  try {
+    const claspJson = path.join(projectPath, '.clasp.json');
+    const config = { scriptId: scriptId, rootDir: '.' };
+    fs.writeFileSync(claspJson, JSON.stringify(config, null, 2), 'utf8');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Execute deploy: clasp push + create new version
+ipcMain.handle('deploy-execute', async (event, { projectPath, description }) => {
+  const steps = [];
+
+  try {
+    // Step 1: clasp push
+    steps.push({ step: 'push', status: 'running' });
+    event.sender.send('deploy-progress', { step: 'push', status: 'running', message: 'Uploading files to Apps Script...' });
+
+    execSync('clasp push --force', { cwd: projectPath, timeout: 30000, stdio: 'pipe' });
+    steps.push({ step: 'push', status: 'done' });
+    event.sender.send('deploy-progress', { step: 'push', status: 'done', message: 'Files uploaded' });
+
+    // Step 2: create new version
+    event.sender.send('deploy-progress', { step: 'version', status: 'running', message: 'Creating new version...' });
+
+    const versionDesc = description || 'Deploy via GAS Commander ' + new Date().toISOString().split('T')[0];
+    const versionOutput = execSync('clasp version "' + versionDesc.replace(/"/g, '\\"') + '"', {
+      cwd: projectPath,
+      timeout: 30000,
+      stdio: 'pipe'
+    }).toString().trim();
+
+    event.sender.send('deploy-progress', { step: 'version', status: 'done', message: versionOutput });
+
+    // Step 3: deploy the new version
+    event.sender.send('deploy-progress', { step: 'deploy', status: 'running', message: 'Deploying new version...' });
+
+    const deployOutput = execSync('clasp deploy --description "' + versionDesc.replace(/"/g, '\\"') + '"', {
+      cwd: projectPath,
+      timeout: 30000,
+      stdio: 'pipe'
+    }).toString().trim();
+
+    event.sender.send('deploy-progress', { step: 'deploy', status: 'done', message: deployOutput });
+
+    return { success: true, message: 'Deploy complete!' };
+
+  } catch (err) {
+    const msg = err.stderr ? err.stderr.toString() : err.message;
+    event.sender.send('deploy-progress', { step: 'error', status: 'error', message: msg });
+    return { success: false, error: msg };
+  }
+});

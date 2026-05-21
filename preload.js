@@ -8,13 +8,21 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.send('run-skill', { projectPath, skillId, args });
   },
 
-  // continueSession: true to resume previous conversation
   runPrompt: (projectPath, prompt, continueSession) => {
     ipcRenderer.send('run-prompt', { projectPath, prompt, continueSession });
   },
 
   stopProcess: () => {
     ipcRenderer.send('stop-process');
+  },
+
+  // Deploy
+  deployCheck: (projectPath) => ipcRenderer.invoke('deploy-check', { projectPath }),
+  deploySetup: (projectPath, scriptId) => ipcRenderer.invoke('deploy-setup', { projectPath, scriptId }),
+  deployExecute: (projectPath, description) => ipcRenderer.invoke('deploy-execute', { projectPath, description }),
+
+  onDeployProgress: (callback) => {
+    ipcRenderer.on('deploy-progress', (_, data) => callback(data));
   },
 
   onStreamEvent: (callback) => {
@@ -28,5 +36,6 @@ contextBridge.exposeInMainWorld('api', {
   removeAllListeners: () => {
     ipcRenderer.removeAllListeners('stream-event');
     ipcRenderer.removeAllListeners('session-end');
+    ipcRenderer.removeAllListeners('deploy-progress');
   }
 });
