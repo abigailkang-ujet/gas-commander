@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GAS Commander</title>
+  <link rel="stylesheet" href="styles.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app">
+    <!-- Titlebar -->
+    <div class="titlebar">
+      <div class="titlebar-dot"></div>
+      <div class="titlebar-logo">GAS Commander</div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-section" id="projectsSection">
+        <div class="section-label">Projects</div>
+        <div id="projectList"></div>
+      </div>
+      <div class="sidebar-section" id="skillsSection" style="display:none">
+        <div class="section-label">Skills</div>
+        <div id="skillList"></div>
+      </div>
+    </div>
+
+    <!-- Main Panel -->
+    <div class="main-panel">
+      <!-- Tab bar -->
+      <div class="tab-bar">
+        <button class="tab-btn active" data-tab="output">Output</button>
+        <button class="tab-btn" data-tab="preview">Preview</button>
+        <div class="tab-spacer"></div>
+        <button class="stop-btn" id="stopBtn">Stop</button>
+      </div>
+
+      <!-- Output -->
+      <div class="output-panel active" id="outputPanel">
+        <div class="output-welcome">
+          <div class="output-welcome-title">GAS Commander</div>
+          <div>프로젝트를 선택하고 스킬 버튼을 클릭하세요</div>
+          <div style="font-size:12px; margin-top:8px; color:var(--text-dim)">또는 아래 입력창에 자유롭게 요청을 입력하세요</div>
+        </div>
+      </div>
+
+      <!-- Preview -->
+      <div class="preview-panel" id="previewPanel">
+        <div class="preview-toolbar">
+          <input type="text" class="preview-url" id="previewUrl" readonly>
+          <button class="preview-refresh-btn" id="previewRefresh">Reload</button>
+        </div>
+        <webview id="previewWebview" class="preview-webview" src="about:blank"></webview>
+      </div>
+
+      <!-- Prompt bar -->
+      <div class="prompt-bar">
+        <input type="text" class="prompt-input" id="promptInput"
+               placeholder="요청을 입력하세요... (예: Gantt 바 색상을 팀별로 더 진하게 해줘)">
+        <button class="prompt-send" id="promptSend">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

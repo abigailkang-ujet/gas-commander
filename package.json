@@ -1,0 +1,15 @@
+{
+  "name": "gas-commander",
+  "version": "0.1.0",
+  "description": "Desktop control panel for Google Apps Script projects — powered by Claude Code",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron ."
+  },
+  "author": "Abigail Kang",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}
