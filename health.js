@@ -14,14 +14,15 @@ function execCapture(cmd, opts) {
   }
 }
 
-function ago(isoOrSeconds) {
+function ago(isoOrEpochSec) {
   let seconds;
-  if (typeof isoOrSeconds === 'string') {
-    const d = new Date(isoOrSeconds);
+  if (typeof isoOrEpochSec === 'string') {
+    const d = new Date(isoOrEpochSec);
     if (isNaN(d.getTime())) return '—';
     seconds = Math.floor((Date.now() - d.getTime()) / 1000);
   } else {
-    seconds = isoOrSeconds;
+    // Treat number as Unix epoch seconds (matches `git log -1 --format=%ct` output).
+    seconds = Math.floor(Date.now() / 1000) - isoOrEpochSec;
   }
   if (seconds < 60) return seconds + 's ago';
   if (seconds < 3600) return Math.floor(seconds / 60) + 'm ago';
