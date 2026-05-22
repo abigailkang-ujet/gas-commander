@@ -26,9 +26,13 @@ function hasGsFile(projectPath) {
 }
 
 function detectStack(projectPath) {
-  // Forge first — its manifest.yml is distinctive
+  // Forge first — Forge projects can also contain .gs files / appsscript.json
+  // (they wrap Apps Script), so we'd misclassify as 'gas' if we checked later.
+  // Require both `modules:` and `app:` at top level — every Forge manifest has both;
+  // unrelated YAMLs that happen to use `modules:` (Helm, Ansible, etc.) do not.
   const manifest = path.join(projectPath, 'manifest.yml');
-  if (fileExists(manifest) && /^\s*modules:/m.test(readSafe(manifest))) return 'forge';
+  const manifestContent = fileExists(manifest) ? readSafe(manifest) : '';
+  if (/^\s*modules:/m.test(manifestContent) && /^\s*app:/m.test(manifestContent)) return 'forge';
 
   // Apps Script
   if (fileExists(path.join(projectPath, '.clasp.json'))) return 'gas';
