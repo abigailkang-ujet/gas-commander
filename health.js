@@ -172,11 +172,26 @@ function probeForge(project) {
       errors.push('forge install list: ' + r.err);
       installRow = { label: 'Install', value: 'cli error', level: 'bad' };
     } else {
-      // Output contains the installed app version among other text.
-      // Match either "Version X.Y.Z" or a bare semver line.
-      const m = r.out.match(/Version[^\n]*?(\d+\.\d+\.\d+)/i) || r.out.match(/\b(\d+\.\d+\.\d+)\b/);
-      installRow = m
-        ? { label: 'Install', value: 'v' + m[1], level: 'ok' }
+      // Parse the "App version" column from the forge install list pipe-delimited table.
+      const lines = r.out.split('\n');
+      let appVersion = null;
+      const headerIdx = lines.findIndex(l => l.includes('App version') && l.includes('│'));
+      if (headerIdx >= 0) {
+        const headerCols = lines[headerIdx].split('│').map(c => c.trim());
+        const colIdx = headerCols.indexOf('App version');
+        if (colIdx >= 0) {
+          for (let i = headerIdx + 1; i < lines.length; i++) {
+            const row = lines[i];
+            if (!row.includes('│')) continue;
+            const cols = row.split('│').map(c => c.trim());
+            const candidate = cols[colIdx];
+            // Skip separator rows like '│────│────│' which have empty trimmed cells
+            if (candidate) { appVersion = candidate; break; }
+          }
+        }
+      }
+      installRow = appVersion
+        ? { label: 'Install', value: 'v' + appVersion, level: 'ok' }
         : { label: 'Install', value: 'no installs', level: 'warn' };
     }
   }
