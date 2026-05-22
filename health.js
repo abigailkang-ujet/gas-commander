@@ -1,7 +1,25 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { detectStack } = require('./stackDetect');
+
+const FORGE_BIN_CANDIDATES = [
+  os.homedir() + '/.npm-global/bin/forge',
+  '/opt/homebrew/bin/forge',
+  '/usr/local/bin/forge'
+];
+
+function resolveForgeBin() {
+  for (const candidate of FORGE_BIN_CANDIDATES) {
+    try {
+      fs.statSync(candidate);
+      return candidate;
+    } catch (_) {}
+  }
+  const which = execCapture('which forge', {});
+  return which.ok ? which.out : null;
+}
 
 // HealthCard shape:
 // { rows: [{ label, value, level }], dotLevel, errors }
@@ -141,8 +159,34 @@ function probeAppsScript(project) {
   return { rows: rows, dotLevel: combineDot(rows), errors: errors };
 }
 function probeForge(project) {
+  const errors = [];
+  const forgeBin = resolveForgeBin();
+
+  let installRow;
+  if (!forgeBin) {
+    installRow = { label: 'Install', value: 'forge not found', level: 'bad' };
+    errors.push('forge binary not in known paths');
+  } else {
+    const r = execCapture(JSON.stringify(forgeBin) + ' install list --product jira', { cwd: project.path });
+    if (!r.ok) {
+      errors.push('forge install list: ' + r.err);
+      installRow = { label: 'Install', value: 'cli error', level: 'bad' };
+    } else {
+      // Output contains the installed app version among other text.
+      // Match either "Version X.Y.Z" or a bare semver line.
+      const m = r.out.match(/Version[^\n]*?(\d+\.\d+\.\d+)/i) || r.out.match(/\b(\d+\.\d+\.\d+)\b/);
+      installRow = m
+        ? { label: 'Install', value: 'v' + m[1], level: 'ok' }
+        : { label: 'Install', value: 'no installs', level: 'warn' };
+    }
+  }
+
   const g = gitRows(project.path);
-  return { rows: [{ label: 'Install', value: 'TODO', level: 'neutral' }, g.lastCommit, g.git], dotLevel: 'grey', errors: [] };
+  const days = daysSinceCommit(project.path);
+  if (days != null && days > 14 && g.lastCommit.level !== 'bad') g.lastCommit.level = 'warn';
+
+  const rows = [installRow, g.lastCommit, g.git];
+  return { rows: rows, dotLevel: combineDot(rows), errors: errors };
 }
 function probePython(project) {
   const g = gitRows(project.path);
