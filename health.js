@@ -30,6 +30,9 @@ function ago(isoOrEpochSec) {
   return Math.floor(seconds / 86400) + 'd ago';
 }
 
+// Returns elapsed days since the last commit, or null if git is unavailable.
+// Callers MUST null-check before comparing (e.g., `null > 14` is false and
+// would silently misclassify a broken project as healthy).
 function daysSinceCommit(projectPath) {
   const r = execCapture('git log -1 --format=%ct', { cwd: projectPath });
   if (!r.ok) return null;
@@ -59,6 +62,11 @@ function gitRows(projectPath) {
   } else if (behind.ok && parseInt(behind.out, 10) > 0) {
     gitValue = behind.out + ' behind';
     gitLevel = 'warn';
+  } else if (!ahead.ok || !behind.ok) {
+    // ahead/behind fail when the current branch has no upstream tracking ref —
+    // e.g., a never-pushed local branch. Distinct signal from clean.
+    gitValue = 'local only · ' + (branch.out || 'main');
+    gitLevel = 'warn';
   } else {
     gitValue = 'clean · ' + (branch.out || 'main');
     gitLevel = 'ok';
@@ -73,6 +81,7 @@ function gitRows(projectPath) {
 function combineDot(rows, opts) {
   opts = opts || {};
   if (opts.forceNeutral) return 'grey';
+  if (!rows || rows.length === 0) return 'grey';
   let level = 'ok';
   for (const r of rows) {
     if (r.level === 'bad') return 'red';
