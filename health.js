@@ -122,7 +122,55 @@ function resolveLiveUrl(project) {
   return all.length ? all[all.length - 1][0] : null;
 }
 
-// Stub probes — Tasks 5–7 fill these in.
+function findWorkflowWithSchedule(projectPath) {
+  const dir = path.join(projectPath, '.github', 'workflows');
+  let entries;
+  try { entries = fs.readdirSync(dir); } catch (_) { return null; }
+  for (const f of entries) {
+    if (!/\.ya?ml$/.test(f)) continue;
+    const content = fs.readFileSync(path.join(dir, f), 'utf8');
+    if (!content.includes('schedule:')) continue;
+    const m = content.match(/cron:\s*['"]([^'"]+)['"]/);
+    if (m) return { file: f, cron: m[1] };
+  }
+  return null;
+}
+
+function nextCronFire(cronExpr) {
+  // Supports: "minute hour dom month dow" with values being '*', '*/N', or a literal integer.
+  // Anything else (named months, ranges, lists) returns null.
+  const parts = cronExpr.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  function fits(val, field) {
+    if (field === '*') return true;
+    const stepMatch = field.match(/^\*\/(\d+)$/);
+    if (stepMatch) return val % parseInt(stepMatch[1], 10) === 0;
+    if (/^\d+$/.test(field)) return val === parseInt(field, 10);
+    return false;
+  }
+  const now = new Date();
+  // GitHub Actions cron is UTC. Look up to 24h ahead, minute by minute.
+  for (let i = 1; i <= 24 * 60; i++) {
+    const d = new Date(now.getTime() + i * 60000);
+    if (fits(d.getUTCMinutes(), parts[0])
+        && fits(d.getUTCHours(), parts[1])
+        && fits(d.getUTCDate(), parts[2])
+        && fits(d.getUTCMonth() + 1, parts[3])
+        && fits(d.getUTCDay(), parts[4])) {
+      return d;
+    }
+  }
+  return null;
+}
+
+function formatCronNext(d) {
+  if (!d) return '—';
+  const minutes = Math.round((d.getTime() - Date.now()) / 60000);
+  if (minutes < 60) return 'in ' + minutes + 'm';
+  if (minutes < 24 * 60) return 'in ' + Math.round(minutes / 60) + 'h';
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
 function probeAppsScript(project) {
   const errors = [];
   const liveUrl = resolveLiveUrl(project);
@@ -204,8 +252,49 @@ function probeForge(project) {
   return { rows: rows, dotLevel: combineDot(rows), errors: errors };
 }
 function probePython(project) {
+  const errors = [];
+  const ghWhich = execCapture('which gh', {});
+  let cronRow, nextRow;
+
+  if (!ghWhich.ok) {
+    cronRow = { label: 'Last cron', value: 'gh not installed', level: 'bad' };
+    nextRow = { label: 'Next run', value: '—', level: 'neutral' };
+    errors.push('gh CLI missing');
+  } else {
+    const wf = findWorkflowWithSchedule(project.path);
+    if (!wf) {
+      cronRow = { label: 'Last cron', value: 'no schedule', level: 'warn' };
+      nextRow = { label: 'Next run', value: '—', level: 'neutral' };
+    } else {
+      const cmd = 'gh run list --workflow=' + JSON.stringify(wf.file)
+                + ' --limit=1 --json status,conclusion,createdAt';
+      const r = execCapture(cmd, { cwd: project.path });
+      if (!r.ok) {
+        cronRow = { label: 'Last cron', value: 'gh error', level: 'bad' };
+        errors.push('gh run list: ' + r.err);
+      } else {
+        let arr;
+        try { arr = JSON.parse(r.out); } catch (_) { arr = []; }
+        const last = arr[0];
+        if (!last) {
+          cronRow = { label: 'Last cron', value: 'no runs', level: 'warn' };
+        } else {
+          const concl = last.conclusion || last.status;
+          const isFail = concl === 'failure' || concl === 'cancelled' || concl === 'timed_out';
+          cronRow = {
+            label: 'Last cron',
+            value: (isFail ? 'FAIL ' : 'OK ') + ago(last.createdAt),
+            level: isFail ? 'bad' : 'ok'
+          };
+        }
+      }
+      nextRow = { label: 'Next run', value: formatCronNext(nextCronFire(wf.cron)), level: 'neutral' };
+    }
+  }
+
   const g = gitRows(project.path);
-  return { rows: [{ label: 'Last cron', value: 'TODO', level: 'neutral' }, { label: 'Next run', value: 'TODO', level: 'neutral' }, g.git], dotLevel: 'grey', errors: [] };
+  const rows = [cronRow, nextRow, g.git];
+  return { rows: rows, dotLevel: combineDot(rows), errors: errors };
 }
 function probeElectron(project) {
   const g = gitRows(project.path);
