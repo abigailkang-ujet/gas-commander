@@ -31,7 +31,7 @@
       "id": "esl-jira-notion-sync",
       "name": "ESL Sync",
       "color": "#f97316",
-      "path": "",
+      "path": "/Users/ab/Desktop/jira-notion-sync",
       "repo": "https://github.com/abigailkang-ujet/esl-jira-notion-sync.git",
       "stackOverride": null,
       "settings": { "liveUrl": null }
