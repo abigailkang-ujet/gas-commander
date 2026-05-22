@@ -97,8 +97,11 @@ function resolveLiveUrl(project) {
   const claudeMd = path.join(project.path, 'CLAUDE.md');
   let content;
   try { content = fs.readFileSync(claudeMd, 'utf8'); } catch (_) { return null; }
-  const m = content.match(/https:\/\/script\.google\.com\/.+?\/exec/);
-  return m ? m[0] : null;
+  // Take the LAST exec URL in the doc — CLAUDE.md often contains example/stale
+  // URLs in code blocks above the current "Live URL: ..." line. Last match is
+  // a robust heuristic without needing label-aware parsing.
+  const all = [...content.matchAll(/https:\/\/script\.google\.com\/[^\s"'`)]+\/exec/g)];
+  return all.length ? all[all.length - 1][0] : null;
 }
 
 // Stub probes — Tasks 5–7 fill these in.
