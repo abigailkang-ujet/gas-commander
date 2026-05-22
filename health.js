@@ -1,4 +1,6 @@
 const { execSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
 const { detectStack } = require('./stackDetect');
 
 // HealthCard shape:
@@ -90,10 +92,50 @@ function combineDot(rows, opts) {
   return level === 'warn' ? 'yellow' : 'green';
 }
 
-// Stub probes — Tasks 4–7 fill these in.
+function resolveLiveUrl(project) {
+  if (project.settings && project.settings.liveUrl) return project.settings.liveUrl;
+  const claudeMd = path.join(project.path, 'CLAUDE.md');
+  let content;
+  try { content = fs.readFileSync(claudeMd, 'utf8'); } catch (_) { return null; }
+  const m = content.match(/https:\/\/script\.google\.com\/.+?\/exec/);
+  return m ? m[0] : null;
+}
+
+// Stub probes — Tasks 5–7 fill these in.
 function probeAppsScript(project) {
+  const errors = [];
+  const liveUrl = resolveLiveUrl(project);
+
+  // Row 1: Live URL HEAD ping
+  let liveRow;
+  if (!liveUrl) {
+    liveRow = { label: 'Live URL', value: 'not configured', level: 'warn' };
+  } else {
+    const r = execCapture(
+      'curl -sI -o /dev/null -w "%{http_code}" --max-time 5 ' + JSON.stringify(liveUrl),
+      {}
+    );
+    if (!r.ok) {
+      errors.push('curl failed: ' + r.err);
+      liveRow = { label: 'Live URL', value: 'unreachable', level: 'bad' };
+    } else {
+      const code = parseInt(r.out, 10);
+      const ok = code >= 200 && code < 400;
+      liveRow = { label: 'Live URL', value: code + (ok ? ' OK' : ' ERR'), level: ok ? 'ok' : 'bad' };
+    }
+  }
+
+  // Rows 2 & 3
   const g = gitRows(project.path);
-  return { rows: [{ label: 'Live URL', value: 'TODO', level: 'neutral' }, g.lastCommit, g.git], dotLevel: 'grey', errors: [] };
+
+  // Commit-age yellow rule
+  const days = daysSinceCommit(project.path);
+  if (days != null && days > 14 && g.lastCommit.level !== 'bad') {
+    g.lastCommit.level = 'warn';
+  }
+
+  const rows = [liveRow, g.lastCommit, g.git];
+  return { rows: rows, dotLevel: combineDot(rows), errors: errors };
 }
 function probeForge(project) {
   const g = gitRows(project.path);
