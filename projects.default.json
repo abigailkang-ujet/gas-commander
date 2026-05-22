@@ -1,0 +1,49 @@
+{
+  "projects": [
+    {
+      "id": "esl-timeline",
+      "name": "ESL Timeline",
+      "color": "#3b82f6",
+      "path": "",
+      "repo": "https://github.com/abigailkang-ujet/esl-timeline.git",
+      "stackOverride": null,
+      "settings": { "liveUrl": null }
+    },
+    {
+      "id": "Programs-dashboard",
+      "name": "Programs Dashboard",
+      "color": "#8b5cf6",
+      "path": "",
+      "repo": "https://github.com/abigailkang-ujet/Programs-dashboard.git",
+      "stackOverride": null,
+      "settings": { "liveUrl": null }
+    },
+    {
+      "id": "jira-portfolio-plugin",
+      "name": "JIRA Portfolio Plugin",
+      "color": "#10b981",
+      "path": "",
+      "repo": "https://github.com/abigailkang-ujet/jira-portfolio-plugin.git",
+      "stackOverride": null,
+      "settings": { "liveUrl": null }
+    },
+    {
+      "id": "esl-jira-notion-sync",
+      "name": "ESL Sync",
+      "color": "#f97316",
+      "path": "",
+      "repo": "https://github.com/abigailkang-ujet/esl-jira-notion-sync.git",
+      "stackOverride": null,
+      "settings": { "liveUrl": null }
+    },
+    {
+      "id": "gas-commander",
+      "name": "GAS Commander",
+      "color": "#9aa4b8",
+      "path": "",
+      "repo": "https://github.com/abigailkang-ujet/gas-commander.git",
+      "stackOverride": "self",
+      "settings": { "liveUrl": null }
+    }
+  ]
+}

@@ -36,21 +36,16 @@ app.on('activate', () => {
 
 // --- Project registry (source of truth: GitHub repos) ---
 const { execSync } = require('child_process');
+const registry = require('./registry');
 
-const PROJECT_REGISTRY = [
-  {
-    dir: 'esl-timeline',
-    name: 'ESL Timeline',
-    color: '#3b82f6',
-    repo: 'https://github.com/abigailkang-ujet/esl-timeline.git'
-  },
-  {
-    dir: 'Programs-dashboard',
-    name: 'Programs Dashboard',
-    color: '#8b5cf6',
-    repo: 'https://github.com/abigailkang-ujet/Programs-dashboard.git'
+let projectRegistry = null;
+
+function getRegistry() {
+  if (!projectRegistry) {
+    projectRegistry = registry.loadRegistry(app.getPath('userData'));
   }
-];
+  return projectRegistry;
+}
 
 function getDesktop() {
   return path.join(require('os').homedir(), 'Desktop');
@@ -58,7 +53,7 @@ function getDesktop() {
 
 // Ensure a project is cloned and up-to-date. Returns sync status.
 function syncProject(c) {
-  const fullPath = path.join(getDesktop(), c.dir);
+  const fullPath = c.path;
   const gitDir = path.join(fullPath, '.git');
 
   try {
@@ -107,9 +102,9 @@ function syncProject(c) {
 // Sync all projects (clone if missing, pull if behind)
 ipcMain.handle('sync-projects', async () => {
   const results = [];
-  for (const c of PROJECT_REGISTRY) {
+  for (const c of getRegistry().projects) {
     const syncResult = syncProject(c);
-    results.push({ id: c.dir, name: c.name, ...syncResult });
+    results.push({ id: c.id, name: c.name, ...syncResult });
   }
   return results;
 });
@@ -118,8 +113,8 @@ ipcMain.handle('sync-projects', async () => {
 ipcMain.handle('discover-projects', async () => {
   const projects = [];
 
-  for (const c of PROJECT_REGISTRY) {
-    const fullPath = path.join(getDesktop(), c.dir);
+  for (const c of getRegistry().projects) {
+    const fullPath = c.path;
     const claudeMd = path.join(fullPath, 'CLAUDE.md');
     if (!fs.existsSync(claudeMd)) continue;
 
@@ -147,7 +142,7 @@ ipcMain.handle('discover-projects', async () => {
     } catch (_) {}
 
     projects.push({
-      id: c.dir,
+      id: c.id,
       name: c.name,
       path: fullPath,
       color: c.color,
