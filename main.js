@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
@@ -37,6 +37,8 @@ app.on('activate', () => {
 // --- Project registry (source of truth: GitHub repos) ---
 const { execSync } = require('child_process');
 const registry = require('./registry');
+const stackDetect = require('./stackDetect');
+const health = require('./health');
 
 let projectRegistry = null;
 
@@ -152,6 +154,70 @@ ipcMain.handle('discover-projects', async () => {
     });
   }
   return projects;
+});
+
+// --- Mission Control IPC ---
+
+ipcMain.handle('registry:list', async () => {
+  return getRegistry();
+});
+
+ipcMain.handle('registry:add', async (_, project) => {
+  if (!project || typeof project.id !== 'string' || !project.id.trim()) {
+    throw new Error('Project id is required');
+  }
+  if (/[\\/]|\.\./.test(project.id) || project.id.startsWith('.')) {
+    throw new Error('Project id cannot contain path separators, "..", or start with "."');
+  }
+  const reg = getRegistry();
+  registry.addProject(reg, project);
+  registry.saveRegistry(app.getPath('userData'), reg);
+  return reg;
+});
+
+ipcMain.handle('registry:remove', async (_, id) => {
+  const reg = getRegistry();
+  registry.removeProject(reg, id);
+  registry.saveRegistry(app.getPath('userData'), reg);
+  return reg;
+});
+
+ipcMain.handle('registry:detectStack', async (_, projectPath) => {
+  return stackDetect.detectStack(projectPath);
+});
+
+ipcMain.handle('health:snapshot', async () => {
+  const reg = getRegistry();
+  const cards = await Promise.all(reg.projects.map(function(p) {
+    return new Promise(function(resolve) {
+      try {
+        resolve({
+          id: p.id,
+          name: p.name,
+          color: p.color,
+          stack: p.stackOverride || stackDetect.detectStack(p.path),
+          card: health.probe(p)
+        });
+      } catch (err) {
+        resolve({
+          id: p.id,
+          name: p.name,
+          color: p.color,
+          stack: 'unknown',
+          card: { rows: [], dotLevel: 'red', errors: [err.message] }
+        });
+      }
+    });
+  }));
+  return { refreshedAt: Date.now(), cards: cards };
+});
+
+ipcMain.handle('dialog:pickDirectory', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory']
+  });
+  if (result.canceled || !result.filePaths[0]) return null;
+  return result.filePaths[0];
 });
 
 // --- Claude Code execution ---

@@ -37,5 +37,13 @@ contextBridge.exposeInMainWorld('api', {
     ipcRenderer.removeAllListeners('stream-event');
     ipcRenderer.removeAllListeners('session-end');
     ipcRenderer.removeAllListeners('deploy-progress');
-  }
+  },
+
+  // Mission Control
+  registryList: () => ipcRenderer.invoke('registry:list'),
+  registryAdd: (project) => ipcRenderer.invoke('registry:add', project),
+  registryRemove: (id) => ipcRenderer.invoke('registry:remove', id),
+  registryDetectStack: (path) => ipcRenderer.invoke('registry:detectStack', path),
+  healthSnapshot: () => ipcRenderer.invoke('health:snapshot'),
+  pickDirectory: () => ipcRenderer.invoke('dialog:pickDirectory')
 });
