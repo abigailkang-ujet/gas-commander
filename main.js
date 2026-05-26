@@ -366,6 +366,24 @@ function saveDeployState(state) {
   fs.writeFileSync(deployStatePath(), JSON.stringify(state, null, 2), 'utf8');
 }
 
+// Parse `clasp deployments` output into [{id, version, description}]. Filters out @HEAD
+// (the always-present "test" deployment). Returns null if the command fails.
+function listClaspDeployments(projectPath) {
+  let raw;
+  try {
+    raw = execSync('clasp deployments', { cwd: projectPath, timeout: 15000, stdio: 'pipe' }).toString();
+  } catch (_) { return null; }
+  const out = [];
+  for (const line of raw.split('\n')) {
+    // Line shape: "- AKfycbxXXX @1 - Description" or "- AKfycbxXXX @HEAD"
+    const m = line.match(/^-\s+(\S+)\s+@(\S+)(?:\s+-\s+(.*))?$/);
+    if (!m) continue;
+    if (m[2] === 'HEAD') continue;       // skip the @HEAD test deployment
+    out.push({ id: m[1], version: m[2], description: (m[3] || '').trim() });
+  }
+  return out;
+}
+
 // Check deploy readiness for a project
 ipcMain.handle('deploy-check', async (_, { projectPath, projectId }) => {
   const result = {
@@ -380,7 +398,9 @@ ipcMain.handle('deploy-check', async (_, { projectPath, projectId }) => {
     upToDate: false,
     commitsSinceDeploy: [],         // [{sha, subject}]
     filesChangedSinceDeploy: [],    // [path]
-    hasUncommitted: false
+    hasUncommitted: false,
+    deploymentId: null,             // stored target deployment (URL-stable updates)
+    availableDeployments: []        // [{id, version, description}] from `clasp deployments`
   };
 
   // Check clasp installed
@@ -450,6 +470,16 @@ ipcMain.handle('deploy-check', async (_, { projectPath, projectId }) => {
     result.hasUncommitted = !!dirty;
   } catch (_) {}
 
+  // Stored target deployment + currently-available deployments. The renderer uses
+  // these to either auto-pick (single) or render a picker (multiple) before deploy.
+  if (projectId && state[projectId] && state[projectId].deploymentId) {
+    result.deploymentId = state[projectId].deploymentId;
+  }
+  if (result.claspJsonExists) {
+    const deployments = listClaspDeployments(projectPath);
+    if (deployments) result.availableDeployments = deployments;
+  }
+
   return result;
 });
 
@@ -465,8 +495,10 @@ ipcMain.handle('deploy-setup', async (_, { projectPath, scriptId }) => {
   }
 });
 
-// Execute deploy: clasp push + create new version
-ipcMain.handle('deploy-execute', async (event, { projectPath, projectId, description }) => {
+// Execute deploy: clasp push → version → deploy. If `deploymentId` is provided,
+// updates that deployment in place (URL stays stable). Otherwise creates a new
+// deployment and saves its id to deploy-state so subsequent deploys stay stable.
+ipcMain.handle('deploy-execute', async (event, { projectPath, projectId, description, deploymentId }) => {
   try {
     // Step 1: clasp push
     event.sender.send('deploy-progress', { step: 'push', status: 'running', message: 'Uploading files to Apps Script...' });
@@ -481,19 +513,46 @@ ipcMain.handle('deploy-execute', async (event, { projectPath, projectId, descrip
     }).toString().trim();
     event.sender.send('deploy-progress', { step: 'version', status: 'done', message: versionOutput });
 
-    // Step 3: deploy the new version
-    event.sender.send('deploy-progress', { step: 'deploy', status: 'running', message: 'Deploying new version...' });
-    const deployOutput = execSync('clasp deploy --description "' + versionDesc.replace(/"/g, '\\"') + '"', {
+    // Parse "Created version N." so we can pin the deployment to it explicitly.
+    const versionMatch = versionOutput.match(/version\s+(\d+)/i);
+    const versionNumber = versionMatch ? versionMatch[1] : null;
+
+    // Step 3: deploy — update existing deployment if deploymentId given, else create new.
+    const isUpdate = !!deploymentId;
+    event.sender.send('deploy-progress', {
+      step: 'deploy', status: 'running',
+      message: isUpdate ? 'Updating deployment ' + deploymentId.slice(0, 12) + '… (URL stays)' : 'Creating new deployment…'
+    });
+
+    let deployCmd = 'clasp deploy --description "' + versionDesc.replace(/"/g, '\\"') + '"';
+    if (versionNumber) deployCmd += ' -V ' + versionNumber;
+    if (deploymentId)  deployCmd += ' -i ' + deploymentId;
+
+    const deployOutput = execSync(deployCmd, {
       cwd: projectPath, timeout: 30000, stdio: 'pipe'
     }).toString().trim();
     event.sender.send('deploy-progress', { step: 'deploy', status: 'done', message: deployOutput });
 
-    // Step 4: record the deployed HEAD sha so the next deploy-check can show Case A/B correctly.
+    // Determine the deployment id we just operated on (provided OR parse from output for new deployments).
+    let finalDeploymentId = deploymentId;
+    if (!finalDeploymentId) {
+      // `clasp deploy` output for new deployments looks like: "- AKfycbxXXX @1"
+      const m = deployOutput.match(/-\s+(\S+)\s+@/);
+      if (m) finalDeploymentId = m[1];
+    }
+
+    // Step 4: record the deployed HEAD sha + deploymentId so the next deploy-check can show
+    // Case A/B correctly AND so future deploys stay on the same deployment URL.
     if (projectId) {
       try {
         const sha = execSync('git rev-parse HEAD', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
         const state = loadDeployState();
-        state[projectId] = { sha: sha, at: new Date().toISOString() };
+        const prev = state[projectId] || {};
+        state[projectId] = {
+          sha: sha,
+          at: new Date().toISOString(),
+          deploymentId: finalDeploymentId || prev.deploymentId || null
+        };
         saveDeployState(state);
       } catch (_) {}
     }

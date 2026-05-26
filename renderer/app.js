@@ -762,7 +762,38 @@ async function saveScriptId() {
   }
 }
 
+// Module-level: which deployment will be updated when "Deploy Now" is clicked.
+// Resolved per-modal-open by renderDeployPreview and consumed by executeDeploy.
+var pendingDeploymentId = null;
+
 function renderDeployPreview(check) {
+  // Resolve target deployment (URL stability). Priority:
+  //   1) stored deploymentId from prior deploy (if it still exists upstream) — auto
+  //   2) exactly one upstream deployment — auto-pick, save on success
+  //   3) multiple upstream deployments — render radio picker, user chooses
+  //   4) zero upstream — fall back to creating new (legacy behavior)
+  var available = check.availableDeployments || [];
+  var stored = check.deploymentId || null;
+  var storedStillExists = stored && available.some(function(d) { return d.id === stored; });
+
+  pendingDeploymentId = null;
+  var targetHtml = '';
+  var pickerHtml = '';
+
+  if (stored && storedStillExists) {
+    pendingDeploymentId = stored;
+    targetHtml = renderTargetBlock(stored, 'Updating existing deployment (URL stays)', 'rgba(34,197,94,0.1)', 'rgba(34,197,94,0.35)', '#86efac');
+  } else if (stored && !storedStillExists) {
+    targetHtml = renderTargetBlock(stored, 'Stored deployment not found upstream — will create new', 'rgba(234,164,75,0.12)', 'rgba(234,164,75,0.4)', '#fbbf77');
+  } else if (available.length === 1) {
+    pendingDeploymentId = available[0].id;
+    targetHtml = renderTargetBlock(available[0].id, 'Will update existing deployment (URL stays) · @' + available[0].version, 'rgba(34,197,94,0.1)', 'rgba(34,197,94,0.35)', '#86efac');
+  } else if (available.length > 1) {
+    pickerHtml = renderDeploymentPicker(available);
+  } else {
+    targetHtml = renderTargetBlock('—', 'No upstream deployments yet — a new one will be created', 'rgba(99,102,241,0.08)', 'rgba(99,102,241,0.3)', '#c7d2fe');
+  }
+
   // Head line — always shown so the user knows WHICH commit is about to deploy.
   var headShort = check.headSha ? check.headSha.slice(0, 7) : '???????';
   var headLine =
@@ -819,20 +850,61 @@ function renderDeployPreview(check) {
   deployModalBody.innerHTML = '<div>'
     + '<div style="font-weight:600; margin-bottom:8px">Script ID: <span style="color:var(--accent-blue); font-family:var(--font-mono); font-size:12px">' + escapeHtml(check.scriptId || '') + '</span></div>'
     + headLine
+    + targetHtml
+    + pickerHtml
     + bodyHtml
     + uncommittedHtml
     + '<div id="deployProgress"></div>'
     + '<div class="deploy-actions" id="deployActions">'
     + '<button class="btn-cancel" onclick="closeDeployModal()">Cancel</button>'
-    + '<button class="btn-deploy" onclick="executeDeploy()">' + (check.upToDate ? 'Re-deploy Anyway' : 'Deploy Now') + '</button>'
+    + '<button class="btn-deploy" id="deployNowBtn" onclick="executeDeploy()"' + (pickerHtml && !pendingDeploymentId ? ' disabled' : '') + '>' + (check.upToDate ? 'Re-deploy Anyway' : 'Deploy Now') + '</button>'
     + '</div></div>';
+
+  // Wire picker if rendered.
+  if (pickerHtml) {
+    document.querySelectorAll('input[name="deploymentChoice"]').forEach(function(radio) {
+      radio.addEventListener('change', function() {
+        pendingDeploymentId = radio.value === '__new__' ? null : radio.value;
+        var btn = document.getElementById('deployNowBtn');
+        if (btn) btn.disabled = false;
+      });
+    });
+  }
+}
+
+function renderTargetBlock(idShown, label, bg, border, color) {
+  return '<div style="margin:0 0 12px; padding:10px 12px; background:' + bg + '; border:1px solid ' + border + '; border-radius:6px; color:' + color + ';">'
+    + '<div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; opacity:0.8; margin-bottom:4px">Target Deployment</div>'
+    + '<div><span style="font-family:var(--font-mono); font-size:12px">' + escapeHtml(idShown === '—' ? '—' : idShown.slice(0, 24) + (idShown.length > 24 ? '…' : '')) + '</span></div>'
+    + '<div style="font-size:11px; opacity:0.85; margin-top:3px">' + escapeHtml(label) + '</div>'
+    + '</div>';
+}
+
+function renderDeploymentPicker(available) {
+  var rows = available.map(function(d) {
+    return '<label style="display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px solid var(--border); border-radius:4px; margin-bottom:4px; cursor:pointer; font-size:12px;">'
+      + '<input type="radio" name="deploymentChoice" value="' + escapeHtml(d.id) + '">'
+      + '<span style="font-family:var(--font-mono); color:var(--text-dim)">' + escapeHtml(d.id.slice(0, 24)) + '…</span>'
+      + '<span style="color:var(--text-dim)">@' + escapeHtml(d.version) + '</span>'
+      + '<span>' + escapeHtml(d.description || '(no description)') + '</span>'
+      + '</label>';
+  }).join('');
+  rows += '<label style="display:flex; align-items:center; gap:8px; padding:6px 8px; border:1px dashed var(--border); border-radius:4px; cursor:pointer; font-size:12px; color:var(--text-dim);">'
+    + '<input type="radio" name="deploymentChoice" value="__new__">'
+    + '<span>+ Create a new deployment instead</span>'
+    + '</label>';
+  return '<div style="margin:0 0 12px;">'
+    + '<div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-dim); margin-bottom:6px">Pick target deployment</div>'
+    + '<div style="font-size:11px; color:var(--text-dim); margin-bottom:8px">Multiple deployments exist for this script. Choose which one to update (URL stays the same), or create a new one.</div>'
+    + rows
+    + '</div>';
 }
 
 async function executeDeploy() {
   var actionsEl = document.getElementById('deployActions');
   actionsEl.innerHTML = '<span style="color:var(--text-dim)">Deploying...</span>';
 
-  var result = await window.api.deployExecute(activeProject.path, activeProject.id, '');
+  var result = await window.api.deployExecute(activeProject.path, activeProject.id, '', pendingDeploymentId);
 
   if (result.success) {
     actionsEl.innerHTML = '<span style="color:var(--accent-green); font-weight:600">\u2705 ' + result.message + '</span>'
