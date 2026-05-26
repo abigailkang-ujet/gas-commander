@@ -111,36 +111,46 @@ ipcMain.handle('sync-projects', async () => {
   return results;
 });
 
-// Discover projects (after sync)
+// Discover projects (after sync) — returns one entry per registry project.
+// Projects without a CLAUDE.md still surface in the sidebar so the registry view
+// stays consistent with Mission Control; Skills section just stays empty for them.
 ipcMain.handle('discover-projects', async () => {
   const projects = [];
 
   for (const c of getRegistry().projects) {
     const fullPath = c.path;
-    const claudeMd = path.join(fullPath, 'CLAUDE.md');
-    if (!fs.existsSync(claudeMd)) continue;
 
+    // CLAUDE.md is optional — used for liveUrl extraction only.
+    const claudeMd = path.join(fullPath, 'CLAUDE.md');
+    let liveUrl = null;
+    if (fs.existsSync(claudeMd)) {
+      try {
+        const claudeContent = fs.readFileSync(claudeMd, 'utf8');
+        const urlMatch = claudeContent.match(/https:\/\/script\.google\.com[^\s)]+\/exec/);
+        if (urlMatch) liveUrl = urlMatch[0];
+      } catch (_) {}
+    }
+
+    // Skills are optional too.
     const skillsDir = path.join(fullPath, '.claude', 'commands');
     let skills = [];
     if (fs.existsSync(skillsDir)) {
-      skills = fs.readdirSync(skillsDir)
-        .filter(f => f.endsWith('.md'))
-        .map(f => {
-          const name = f.replace('.md', '');
-          const content = fs.readFileSync(path.join(skillsDir, f), 'utf8');
-          const titleMatch = content.match(/^#\s+(.+)/m);
-          return { id: name, label: titleMatch ? titleMatch[1] : name, file: f };
-        });
+      try {
+        skills = fs.readdirSync(skillsDir)
+          .filter(f => f.endsWith('.md'))
+          .map(f => {
+            const name = f.replace('.md', '');
+            const content = fs.readFileSync(path.join(skillsDir, f), 'utf8');
+            const titleMatch = content.match(/^#\s+(.+)/m);
+            return { id: name, label: titleMatch ? titleMatch[1] : name, file: f };
+          });
+      } catch (_) {}
     }
 
-    const claudeContent = fs.readFileSync(claudeMd, 'utf8');
-    const urlMatch = claudeContent.match(/https:\/\/script\.google\.com[^\s)]+\/exec/);
-
-    // Get git info
+    // Git info — best-effort
     let gitInfo = '';
     try {
-      const log = execSync('git log --oneline -1', { cwd: fullPath, stdio: 'pipe' }).toString().trim();
-      gitInfo = log;
+      gitInfo = execSync('git log --oneline -1', { cwd: fullPath, stdio: 'pipe' }).toString().trim();
     } catch (_) {}
 
     projects.push({
@@ -148,9 +158,9 @@ ipcMain.handle('discover-projects', async () => {
       name: c.name,
       path: fullPath,
       color: c.color,
-      liveUrl: urlMatch ? urlMatch[0] : null,
-      skills,
-      gitInfo
+      liveUrl: liveUrl,
+      skills: skills,
+      gitInfo: gitInfo
     });
   }
   return projects;

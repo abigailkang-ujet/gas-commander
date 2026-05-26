@@ -139,7 +139,7 @@ function renderOverview() {
       var name = card.querySelector('.mc-name') ? card.querySelector('.mc-name').textContent : id;
       if (!confirm('Remove "' + name + '" from the registry?\n\n(The folder on disk is NOT deleted.)')) return;
       window.api.registryRemove(id).then(function() {
-        refreshOverview();
+        refreshSidebarAndOverview();
       });
     });
   });
@@ -158,6 +158,19 @@ function selectProjectFromOverview(id) {
   } else {
     selectProject(id);
   }
+}
+
+// Re-fetch both registry-derived views (sidebar list AND Mission Control grid).
+// Called after registry mutations so both surfaces stay consistent.
+async function refreshSidebarAndOverview() {
+  try {
+    var fresh = await window.api.discoverProjects();
+    if (Array.isArray(fresh)) {
+      projects = fresh;
+      renderProjects();
+    }
+  } catch (_) {}
+  await refreshOverview();
 }
 
 async function refreshOverview() {
@@ -566,7 +579,7 @@ function setupListeners() {
     try {
       await window.api.registryAdd(newProject);
       closeAddProject();
-      refreshOverview();
+      await refreshSidebarAndOverview();
     } catch (err) {
       apError.textContent = String(err && err.message || err) || 'Failed to add project';
       apError.style.display = 'block';
