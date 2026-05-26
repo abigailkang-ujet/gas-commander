@@ -316,7 +316,11 @@ function probe(project) {
     case 'forge':    return probeForge(project);
     case 'python':   return probePython(project);
     case 'electron': return probeElectron(project);
-    case 'self':     return probeElectron(project);  // same probe, grey-locked downstream
+    case 'self': {
+      const card = probeElectron(project);
+      card.dotLevel = 'grey';
+      return card;
+    }
     default:         return probeUnknown(project);
   }
 }
