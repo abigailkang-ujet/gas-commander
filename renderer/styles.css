@@ -686,3 +686,32 @@ button, input, select { -webkit-app-region: no-drag; }
 .mc-row.bad  span:last-child { color: #fca5a5; }
 .mc-row.warn span:last-child { color: #fbbf77; }
 .mc-row.ok   span:last-child { color: #86efac; }
+
+/* === Add Project Modal === */
+.ap-label { display:block; font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-dim); margin: 10px 0 4px; }
+.ap-row { display:flex; gap:6px; }
+.ap-input {
+  flex:1; background: rgba(0,0,0,0.25); border: 1px solid var(--border);
+  border-radius:4px; padding:6px 8px; font-size:12px; color:var(--text);
+  font-family: inherit;
+}
+.ap-input:focus { outline: 1px solid rgba(99,102,241,0.5); }
+.ap-browse, .ap-cancel, .ap-save {
+  padding:6px 12px; font-size:12px; border-radius:4px; cursor:pointer;
+  border:1px solid var(--border); font-family: inherit;
+}
+.ap-browse { background: rgba(255,255,255,0.05); color: var(--text); }
+.ap-browse:hover { background: rgba(255,255,255,0.1); }
+.ap-cancel { background: transparent; color: var(--text-dim); }
+.ap-cancel:hover { color: var(--text); }
+.ap-save { background: rgba(99,102,241,0.4); border-color: rgba(99,102,241,0.6); color: #fff; }
+.ap-save:hover:not(:disabled) { background: rgba(99,102,241,0.55); }
+.ap-save:disabled { opacity:0.4; cursor: default; }
+.ap-detected {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size:12px; padding: 6px 8px; background: rgba(0,0,0,0.25);
+  border-radius:4px; color: var(--text);
+}
+.ap-color { height:32px; width:60px; border:1px solid var(--border); border-radius:4px; background:transparent; padding:2px; cursor: pointer; }
+.ap-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:14px; }
+.ap-error { padding:6px 10px; background: rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.4); border-radius:4px; color:#fca5a5; font-size:12px; margin-top:8px; }

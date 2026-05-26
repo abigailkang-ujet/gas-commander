@@ -24,6 +24,18 @@ var promptSend = document.getElementById('promptSend');
 var stopBtn = document.getElementById('stopBtn');
 var tabBtns = document.querySelectorAll('.tab-btn');
 
+var addProjectBtn = document.getElementById('addProjectBtn');
+var apModal = document.getElementById('addProjectModal');
+var apPath = document.getElementById('apPath');
+var apName = document.getElementById('apName');
+var apColor = document.getElementById('apColor');
+var apDetected = document.getElementById('apDetected');
+var apError = document.getElementById('apError');
+var apSave = document.getElementById('apSave');
+var apCancel = document.getElementById('apCancel');
+var apBrowse = document.getElementById('apBrowse');
+var apClose = document.getElementById('addProjectModalClose');
+
 var SKILL_ICONS = {
   'deploy': '\u{1F680}',
   'fix-bug': '\u{1F41B}',
@@ -115,6 +127,20 @@ function renderOverview() {
   overviewGrid.querySelectorAll('.mc-card').forEach(function(card) {
     card.addEventListener('click', function() {
       selectProjectFromOverview(card.dataset.id);
+    });
+  });
+
+  // Wire right-click → remove from registry.
+  overviewGrid.querySelectorAll('.mc-card').forEach(function(card) {
+    card.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      var id = card.dataset.id;
+      if (id === 'gas-commander') return;  // self entry can't be removed
+      var name = card.querySelector('.mc-name') ? card.querySelector('.mc-name').textContent : id;
+      if (!confirm('Remove "' + name + '" from the registry?\n\n(The folder on disk is NOT deleted.)')) return;
+      window.api.registryRemove(id).then(function() {
+        refreshOverview();
+      });
     });
   });
 }
@@ -501,6 +527,53 @@ function setupListeners() {
     updatePromptPlaceholder();
   });
 
+  // Add Project modal
+  addProjectBtn.addEventListener('click', openAddProject);
+  apCancel.addEventListener('click', closeAddProject);
+  apClose.addEventListener('click', closeAddProject);
+  apModal.addEventListener('click', function(e) {
+    if (e.target === apModal) closeAddProject();
+  });
+
+  apBrowse.addEventListener('click', async function() {
+    var picked = await window.api.pickDirectory();
+    if (!picked) return;
+    apPath.value = picked;
+    detectAndUpdate();
+  });
+
+  apPath.addEventListener('input', detectAndUpdate);
+  apName.addEventListener('input', updateApSaveDisabled);
+
+  apSave.addEventListener('click', async function() {
+    var id = deriveProjectId(apName.value);
+    if (!id) {
+      apError.textContent = 'Display name must produce a non-empty id (letters / digits / hyphens).';
+      apError.style.display = 'block';
+      return;
+    }
+    var newProject = {
+      id: id,
+      name: apName.value.trim(),
+      color: apColor.value,
+      path: apPath.value.trim(),
+      repo: '',
+      stackOverride: null,
+      settings: { liveUrl: null }
+    };
+    apError.style.display = 'none';
+    apSave.disabled = true;
+    try {
+      await window.api.registryAdd(newProject);
+      closeAddProject();
+      refreshOverview();
+    } catch (err) {
+      apError.textContent = String(err && err.message || err) || 'Failed to add project';
+      apError.style.display = 'block';
+      apSave.disabled = false;
+    }
+  });
+
   // Deploy button
   document.getElementById('deployBtn').addEventListener('click', openDeployModal);
   document.getElementById('deployModalClose').addEventListener('click', closeDeployModal);
@@ -534,6 +607,51 @@ function setupListeners() {
     }
     container.appendChild(item);
   });
+}
+
+// === Add Project Modal ===
+function openAddProject() {
+  apPath.value = '';
+  apName.value = '';
+  apColor.value = '#9aa4b8';
+  apDetected.textContent = '—';
+  apError.style.display = 'none';
+  apError.textContent = '';
+  apSave.disabled = true;
+  apModal.style.display = 'flex';
+}
+
+function closeAddProject() {
+  apModal.style.display = 'none';
+}
+
+function deriveProjectId(name) {
+  return name.trim().toLowerCase()
+    .replace(/\s+/g, '-')
+    .replace(/[^a-z0-9-]/g, '')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+async function detectAndUpdate() {
+  var p = apPath.value.trim();
+  if (!p) { apDetected.textContent = '—'; apSave.disabled = true; return; }
+  apDetected.textContent = '…';
+  try {
+    var stack = await window.api.registryDetectStack(p);
+    apDetected.textContent = stack || 'unknown';
+  } catch (_) {
+    apDetected.textContent = 'unknown';
+  }
+  if (!apName.value.trim()) {
+    var parts = p.split('/').filter(Boolean);
+    apName.value = parts[parts.length - 1] || '';
+  }
+  updateApSaveDisabled();
+}
+
+function updateApSaveDisabled() {
+  apSave.disabled = !(apName.value.trim() && apPath.value.trim());
 }
 
 // === Deploy Modal ===
