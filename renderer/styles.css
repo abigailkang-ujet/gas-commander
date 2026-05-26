@@ -661,3 +661,28 @@ button, input, select { -webkit-app-region: no-drag; }
   gap: 10px;
   align-content: start;
 }
+
+/* === Mission Control cards === */
+.mc-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.12s ease;
+}
+.mc-card:hover { border-color: rgba(99,102,241,0.4); }
+.mc-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.mc-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.mc-dot-green  { background: #22c55e; }
+.mc-dot-yellow { background: #eab308; }
+.mc-dot-red    { background: #ef4444; }
+.mc-dot-grey   { background: #6b7280; }
+.mc-name { font-weight: 600; color: var(--text); font-size: 13px; }
+.mc-stack { margin-left: auto; font-size: 9px; opacity: 0.5; text-transform: uppercase; letter-spacing: 0.06em; }
+.mc-row { display: flex; justify-content: space-between; font-size: 11px; padding: 2px 0; }
+.mc-row span:first-child { color: var(--text-dim); }
+.mc-row span:last-child  { color: var(--text); font-variant-numeric: tabular-nums; }
+.mc-row.bad  span:last-child { color: #fca5a5; }
+.mc-row.warn span:last-child { color: #fbbf77; }
+.mc-row.ok   span:last-child { color: #86efac; }

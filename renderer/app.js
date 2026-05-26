@@ -4,6 +4,7 @@ var activeProject = null;
 var isRunning = false;
 var hasSession = false; // true after first interaction completes (can continue)
 var currentView = 'overview';  // 'overview' | 'project'
+var lastSnapshot = null;
 
 // === DOM refs ===
 var projectList = document.getElementById('projectList');
@@ -53,6 +54,7 @@ async function init() {
 
   appendBubble('system', 'Ready — 프로젝트를 선택하세요');
   showView('overview');
+  refreshOverview();  // populate Overview asynchronously after sync messages settle
 }
 
 function renderProjects() {
@@ -66,6 +68,83 @@ function renderProjects() {
       + '</div>'
     + '</button>';
   }).join('');
+}
+
+function dotClass(level) {
+  return ({ green: 'mc-dot-green', yellow: 'mc-dot-yellow', red: 'mc-dot-red', grey: 'mc-dot-grey' })[level] || 'mc-dot-grey';
+}
+
+function rowClass(level) {
+  if (level === 'bad')  return 'bad';
+  if (level === 'warn') return 'warn';
+  if (level === 'ok')   return 'ok';
+  return '';
+}
+
+function formatAgo(ts) {
+  var sec = Math.floor((Date.now() - ts) / 1000);
+  if (sec < 60)   return sec + 's';
+  if (sec < 3600) return Math.floor(sec / 60) + 'm';
+  return Math.floor(sec / 3600) + 'h';
+}
+
+function renderOverview() {
+  if (!lastSnapshot) {
+    overviewGrid.innerHTML = '<div style="opacity:0.6; font-size:12px; padding:20px">Loading…</div>';
+    return;
+  }
+  overviewGrid.innerHTML = lastSnapshot.cards.map(function(c) {
+    var rows = (c.card.rows || []).map(function(r) {
+      return '<div class="mc-row ' + rowClass(r.level) + '">'
+        + '<span>' + escapeHtml(r.label) + '</span>'
+        + '<span>' + escapeHtml(r.value) + '</span>'
+      + '</div>';
+    }).join('');
+    return '<div class="mc-card" data-id="' + escapeHtml(c.id) + '">'
+      + '<div class="mc-head">'
+        + '<span class="mc-dot ' + dotClass(c.card.dotLevel) + '"></span>'
+        + '<span class="mc-name">' + escapeHtml(c.name) + '</span>'
+        + '<span class="mc-stack">' + escapeHtml(c.stack) + '</span>'
+      + '</div>'
+      + rows
+    + '</div>';
+  }).join('');
+  lastRefreshedLabel.textContent = 'Refreshed ' + formatAgo(lastSnapshot.refreshedAt) + ' ago';
+
+  // Wire click-to-open. Bind to each .mc-card individually.
+  overviewGrid.querySelectorAll('.mc-card').forEach(function(card) {
+    card.addEventListener('click', function() {
+      selectProjectFromOverview(card.dataset.id);
+    });
+  });
+}
+
+function selectProjectFromOverview(id) {
+  // If the projects[] array hasn't been populated yet (overview-first flow), discover first.
+  if (!projects.length) {
+    window.api.discoverProjects().then(function(arr) {
+      if (Array.isArray(arr)) {
+        projects = arr;
+        renderProjects();
+      }
+      selectProject(id);
+    });
+  } else {
+    selectProject(id);
+  }
+}
+
+async function refreshOverview() {
+  refreshBtn.disabled = true;
+  var prevText = refreshBtn.textContent;
+  refreshBtn.textContent = '…';
+  try {
+    lastSnapshot = await window.api.healthSnapshot();
+    renderOverview();
+  } finally {
+    refreshBtn.disabled = false;
+    refreshBtn.textContent = prevText;
+  }
 }
 
 function renderSkills() {
@@ -369,6 +448,7 @@ function switchTab(tabName) {
 // === Event listeners ===
 function setupListeners() {
   overviewBtn.addEventListener('click', function() { showView('overview'); });
+  refreshBtn.addEventListener('click', refreshOverview);
 
   projectList.addEventListener('click', function(e) {
     var btn = e.target.closest('.project-btn');
