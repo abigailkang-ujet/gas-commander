@@ -95,8 +95,16 @@ function showView(view) {
   var promptBar = document.querySelector('.prompt-bar');
 
   if (view === 'overview') {
-    if (outputPanelEl) outputPanelEl.classList.remove('active');
-    if (previewPanelEl) previewPanelEl.classList.remove('active');
+    if (outputPanelEl) {
+      outputPanelEl.classList.remove('active');
+      // switchTab() writes inline display:block on outputPanel; clearing the class
+      // alone isn't enough — force the inline style to hidden as well.
+      outputPanelEl.style.display = 'none';
+    }
+    if (previewPanelEl) {
+      previewPanelEl.classList.remove('active');
+      previewPanelEl.style.display = 'none';
+    }
     if (tabBar) tabBar.style.display = 'none';
     if (promptBar) promptBar.style.display = 'none';
     // Clear active project highlight + hide Skills/Deploy
@@ -105,6 +113,10 @@ function showView(view) {
     document.getElementById('deploySection').style.display = 'none';
     activeProject = null;
   } else {
+    // Clear the inline display:none we may have set, so switchTab's class-vs-inline
+    // mechanism can take over again.
+    if (outputPanelEl) outputPanelEl.style.display = '';
+    if (previewPanelEl) previewPanelEl.style.display = '';
     // Restore the original "active" panel — default to Output if nothing is active
     if (outputPanelEl && !outputPanelEl.classList.contains('active') &&
         previewPanelEl && !previewPanelEl.classList.contains('active')) {
@@ -453,7 +465,10 @@ function closeDeployModal() {
 }
 
 async function openDeployModal() {
-  if (!activeProject) return;
+  // Capture the project locally so that a user clicking Overview (or switching
+  // projects) mid-await doesn't null `activeProject` out from under us.
+  var project = activeProject;
+  if (!project) return;
   deployModal.style.display = 'flex';
 
   // B2: re-sync + re-discover before showing modal, so any external pushes are reflected
@@ -464,12 +479,15 @@ async function openDeployModal() {
     var fresh = await window.api.discoverProjects();
     if (Array.isArray(fresh)) {
       projects = fresh;
-      var updated = projects.find(function(p) { return p.id === activeProject.id; });
-      if (updated) activeProject = updated;
+      var updated = projects.find(function(p) { return p.id === project.id; });
+      if (updated) {
+        project = updated;
+        if (activeProject && activeProject.id === project.id) activeProject = updated;
+      }
       renderProjects();
       // Restore active highlight after re-render
       document.querySelectorAll('.project-btn').forEach(function(btn) {
-        btn.classList.toggle('active', btn.dataset.id === activeProject.id);
+        btn.classList.toggle('active', btn.dataset.id === project.id);
       });
     }
   } catch (_) {
@@ -477,7 +495,7 @@ async function openDeployModal() {
   }
 
   deployModalBody.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-dim)">Checking deploy status…</div>';
-  var check = await window.api.deployCheck(activeProject.path, activeProject.id);
+  var check = await window.api.deployCheck(project.path, project.id);
 
   if (!check.claspInstalled) {
     deployModalBody.innerHTML = renderSetupNeeded('clasp CLI가 설치되어 있지 않습니다.', '터미널에서 실행: <code>npm install -g @google/clasp</code>');
