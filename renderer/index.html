@@ -17,9 +17,16 @@
 
     <!-- Sidebar -->
     <div class="sidebar">
+      <div class="sidebar-section" id="overviewSection">
+        <button class="overview-btn active" id="overviewBtn">
+          <span class="overview-icon">&#x1F4CA;</span>
+          <span>Overview</span>
+        </button>
+      </div>
       <div class="sidebar-section" id="projectsSection">
         <div class="section-label">Projects</div>
         <div id="projectList"></div>
+        <button class="add-project-btn" id="addProjectBtn" onclick="alert('Add Project will be available soon')">+ Add Project</button>
       </div>
       <div class="sidebar-section" id="skillsSection" style="display:none">
         <div class="section-label">Skills</div>
@@ -73,6 +80,20 @@
           <button class="preview-refresh-btn" id="previewRefresh">Reload</button>
         </div>
         <webview id="previewWebview" class="preview-webview" src="about:blank"></webview>
+      </div>
+
+      <!-- Overview -->
+      <div class="overview-panel active" id="overviewPanel">
+        <div class="overview-header">
+          <div class="overview-title">Mission Control</div>
+          <div class="overview-meta">
+            <span id="lastRefreshed">—</span>
+            <button class="refresh-btn" id="refreshBtn">&#x21BB; Refresh</button>
+          </div>
+        </div>
+        <div class="overview-grid" id="overviewGrid">
+          <div style="opacity:0.6; font-size:13px; padding:20px">Overview grid will populate in Task 10</div>
+        </div>
       </div>
 
       <!-- Prompt bar -->

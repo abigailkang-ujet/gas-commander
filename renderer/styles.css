@@ -613,3 +613,51 @@ button, input, select { -webkit-app-region: no-drag; }
 }
 
 .deploy-progress-item .spinner { width: 12px; height: 12px; }
+
+/* === Overview sidebar entry === */
+.overview-btn {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 8px 10px;
+  background: transparent; border: 1px solid transparent; border-radius: 6px;
+  color: var(--text); font: inherit; font-size: 13px; cursor: pointer;
+  text-align: left;
+}
+.overview-btn:hover { background: rgba(255,255,255,0.04); }
+.overview-btn.active {
+  background: rgba(99,102,241,0.18);
+  border-color: rgba(99,102,241,0.4);
+  color: #c7d2fe;
+}
+.overview-icon { font-size: 14px; }
+
+/* === Add Project button === */
+.add-project-btn {
+  display: block; width: 100%; margin-top: 6px;
+  padding: 6px 10px; font-size: 11px;
+  background: transparent; border: 1px dashed var(--border); border-radius: 4px;
+  color: var(--text-dim); cursor: pointer;
+}
+.add-project-btn:hover { color: var(--text); border-color: var(--text-dim); }
+
+/* === Overview panel === */
+.overview-panel {
+  display: none; flex-direction: column; flex: 1;
+  padding: 16px; gap: 12px; overflow: auto;
+}
+.overview-panel.active { display: flex; }
+
+.overview-header { display: flex; align-items: center; justify-content: space-between; }
+.overview-title { font-size: 16px; font-weight: 600; color: var(--text); }
+.overview-meta { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-dim); }
+.refresh-btn {
+  padding: 4px 10px; font-size: 11px;
+  background: rgba(99,102,241,0.18); border: 1px solid rgba(99,102,241,0.4);
+  border-radius: 4px; color: #c7d2fe; cursor: pointer;
+}
+.refresh-btn:disabled { opacity: 0.5; cursor: default; }
+
+.overview-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  align-content: start;
+}

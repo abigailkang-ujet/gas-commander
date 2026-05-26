@@ -3,10 +3,16 @@ var projects = [];
 var activeProject = null;
 var isRunning = false;
 var hasSession = false; // true after first interaction completes (can continue)
+var currentView = 'overview';  // 'overview' | 'project'
 
 // === DOM refs ===
 var projectList = document.getElementById('projectList');
 var skillsSection = document.getElementById('skillsSection');
+var overviewBtn = document.getElementById('overviewBtn');
+var overviewPanel = document.getElementById('overviewPanel');
+var overviewGrid = document.getElementById('overviewGrid');
+var refreshBtn = document.getElementById('refreshBtn');
+var lastRefreshedLabel = document.getElementById('lastRefreshed');
 var skillList = document.getElementById('skillList');
 var outputPanel = document.getElementById('outputPanel');
 var previewPanel = document.getElementById('previewPanel');
@@ -46,6 +52,7 @@ async function init() {
   renderProjects();
 
   appendBubble('system', 'Ready — 프로젝트를 선택하세요');
+  showView('overview');
 }
 
 function renderProjects() {
@@ -76,7 +83,40 @@ function renderSkills() {
   }).join('');
 }
 
+function showView(view) {
+  currentView = view;
+  overviewBtn.classList.toggle('active', view === 'overview');
+  overviewPanel.classList.toggle('active', view === 'overview');
+
+  // The existing output/preview/prompt/tab UI is hidden when on Overview.
+  var outputPanelEl = document.getElementById('outputPanel');
+  var previewPanelEl = document.getElementById('previewPanel');
+  var tabBar = document.querySelector('.tab-bar');
+  var promptBar = document.querySelector('.prompt-bar');
+
+  if (view === 'overview') {
+    if (outputPanelEl) outputPanelEl.classList.remove('active');
+    if (previewPanelEl) previewPanelEl.classList.remove('active');
+    if (tabBar) tabBar.style.display = 'none';
+    if (promptBar) promptBar.style.display = 'none';
+    // Clear active project highlight + hide Skills/Deploy
+    document.querySelectorAll('.project-btn').forEach(function(b) { b.classList.remove('active'); });
+    skillsSection.style.display = 'none';
+    document.getElementById('deploySection').style.display = 'none';
+    activeProject = null;
+  } else {
+    // Restore the original "active" panel — default to Output if nothing is active
+    if (outputPanelEl && !outputPanelEl.classList.contains('active') &&
+        previewPanelEl && !previewPanelEl.classList.contains('active')) {
+      outputPanelEl.classList.add('active');
+    }
+    if (tabBar) tabBar.style.display = '';
+    if (promptBar) promptBar.style.display = '';
+  }
+}
+
 function selectProject(projectId) {
+  showView('project');
   activeProject = projects.find(function(p) { return p.id === projectId; });
   document.querySelectorAll('.project-btn').forEach(function(btn) {
     btn.classList.toggle('active', btn.dataset.id === projectId);
@@ -316,6 +356,8 @@ function switchTab(tabName) {
 
 // === Event listeners ===
 function setupListeners() {
+  overviewBtn.addEventListener('click', function() { showView('overview'); });
+
   projectList.addEventListener('click', function(e) {
     var btn = e.target.closest('.project-btn');
     if (btn) selectProject(btn.dataset.id);
