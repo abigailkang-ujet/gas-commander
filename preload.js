@@ -17,9 +17,9 @@ contextBridge.exposeInMainWorld('api', {
   },
 
   // Deploy
-  deployCheck: (projectPath) => ipcRenderer.invoke('deploy-check', { projectPath }),
+  deployCheck: (projectPath, projectId) => ipcRenderer.invoke('deploy-check', { projectPath, projectId }),
   deploySetup: (projectPath, scriptId) => ipcRenderer.invoke('deploy-setup', { projectPath, scriptId }),
-  deployExecute: (projectPath, description) => ipcRenderer.invoke('deploy-execute', { projectPath, description }),
+  deployExecute: (projectPath, projectId, description) => ipcRenderer.invoke('deploy-execute', { projectPath, projectId, description }),
 
   onDeployProgress: (callback) => {
     ipcRenderer.on('deploy-progress', (_, data) => callback(data));

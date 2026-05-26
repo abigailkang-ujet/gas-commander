@@ -277,16 +277,34 @@ ipcMain.on('stop-process', () => {
 
 // --- Deploy via clasp ---
 
+// --- Deploy state: per-project record of last commit that was deployed via gas-commander.
+// Stored in userData (not in the deployed project's repo) so we don't touch downstream .gitignores.
+function deployStatePath() {
+  return path.join(app.getPath('userData'), 'deploy-state.json');
+}
+function loadDeployState() {
+  try { return JSON.parse(fs.readFileSync(deployStatePath(), 'utf8')); } catch (_) { return {}; }
+}
+function saveDeployState(state) {
+  fs.mkdirSync(app.getPath('userData'), { recursive: true });
+  fs.writeFileSync(deployStatePath(), JSON.stringify(state, null, 2), 'utf8');
+}
+
 // Check deploy readiness for a project
-ipcMain.handle('deploy-check', async (_, { projectPath }) => {
+ipcMain.handle('deploy-check', async (_, { projectPath, projectId }) => {
   const result = {
     claspInstalled: false,
     claspLoggedIn: false,
     claspJsonExists: false,
     scriptId: null,
-    hasChanges: false,
-    diff: '',
-    files: []
+    headSha: null,
+    headSubject: '',
+    lastDeployedSha: null,
+    lastDeployedAt: null,
+    upToDate: false,
+    commitsSinceDeploy: [],         // [{sha, subject}]
+    filesChangedSinceDeploy: [],    // [path]
+    hasUncommitted: false
   };
 
   // Check clasp installed
@@ -311,17 +329,49 @@ ipcMain.handle('deploy-check', async (_, { projectPath }) => {
     } catch (_) {}
   }
 
-  // Get git diff (what would be deployed)
+  // HEAD commit info
   try {
-    const diff = execSync('git diff --stat', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
-    const diffFull = execSync('git diff', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
-    const untracked = execSync('git ls-files --others --exclude-standard', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
-    result.hasChanges = !!(diff || untracked);
-    result.diff = diffFull || '(no uncommitted changes)';
-    result.files = diff ? diff.split('\n') : [];
-    if (untracked) {
-      result.files.push('Untracked: ' + untracked.replace(/\n/g, ', '));
-    }
+    result.headSha = execSync('git rev-parse HEAD', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
+    result.headSubject = execSync('git log -1 --format=%s', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
+  } catch (_) {}
+
+  // Last deployed commit (from userData record)
+  const state = loadDeployState();
+  if (projectId && state[projectId]) {
+    result.lastDeployedSha = state[projectId].sha;
+    result.lastDeployedAt = state[projectId].at;
+    result.upToDate = result.headSha != null && result.lastDeployedSha === result.headSha;
+  }
+
+  // Commits + files changed since last deploy
+  if (result.lastDeployedSha && !result.upToDate && result.headSha) {
+    try {
+      const log = execSync(
+        'git log ' + result.lastDeployedSha + '..HEAD --format=%H%x09%s',
+        { cwd: projectPath, stdio: 'pipe' }
+      ).toString().trim();
+      result.commitsSinceDeploy = log
+        ? log.split('\n').map(function(line) {
+            const tab = line.indexOf('\t');
+            return tab < 0
+              ? { sha: line, subject: '' }
+              : { sha: line.slice(0, tab), subject: line.slice(tab + 1) };
+          })
+        : [];
+      const diffNames = execSync(
+        'git diff --name-only ' + result.lastDeployedSha + ' HEAD',
+        { cwd: projectPath, stdio: 'pipe' }
+      ).toString().trim();
+      result.filesChangedSinceDeploy = diffNames ? diffNames.split('\n') : [];
+    } catch (_) {}
+  }
+
+  // Uncommitted working-tree warning (clasp only pushes committed state? No — clasp pushes
+  // whatever is on disk, but since we deploy a tagged commit, uncommitted changes WILL be
+  // pushed too. Surfacing this prevents the silent "I forgot to commit" footgun.)
+  try {
+    const dirty = execSync('git status --porcelain', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
+    result.hasUncommitted = !!dirty;
   } catch (_) {}
 
   return result;
@@ -340,43 +390,39 @@ ipcMain.handle('deploy-setup', async (_, { projectPath, scriptId }) => {
 });
 
 // Execute deploy: clasp push + create new version
-ipcMain.handle('deploy-execute', async (event, { projectPath, description }) => {
-  const steps = [];
-
+ipcMain.handle('deploy-execute', async (event, { projectPath, projectId, description }) => {
   try {
     // Step 1: clasp push
-    steps.push({ step: 'push', status: 'running' });
     event.sender.send('deploy-progress', { step: 'push', status: 'running', message: 'Uploading files to Apps Script...' });
-
     execSync('clasp push --force', { cwd: projectPath, timeout: 30000, stdio: 'pipe' });
-    steps.push({ step: 'push', status: 'done' });
     event.sender.send('deploy-progress', { step: 'push', status: 'done', message: 'Files uploaded' });
 
     // Step 2: create new version
     event.sender.send('deploy-progress', { step: 'version', status: 'running', message: 'Creating new version...' });
-
     const versionDesc = description || 'Deploy via GAS Commander ' + new Date().toISOString().split('T')[0];
     const versionOutput = execSync('clasp version "' + versionDesc.replace(/"/g, '\\"') + '"', {
-      cwd: projectPath,
-      timeout: 30000,
-      stdio: 'pipe'
+      cwd: projectPath, timeout: 30000, stdio: 'pipe'
     }).toString().trim();
-
     event.sender.send('deploy-progress', { step: 'version', status: 'done', message: versionOutput });
 
     // Step 3: deploy the new version
     event.sender.send('deploy-progress', { step: 'deploy', status: 'running', message: 'Deploying new version...' });
-
     const deployOutput = execSync('clasp deploy --description "' + versionDesc.replace(/"/g, '\\"') + '"', {
-      cwd: projectPath,
-      timeout: 30000,
-      stdio: 'pipe'
+      cwd: projectPath, timeout: 30000, stdio: 'pipe'
     }).toString().trim();
-
     event.sender.send('deploy-progress', { step: 'deploy', status: 'done', message: deployOutput });
 
-    return { success: true, message: 'Deploy complete!' };
+    // Step 4: record the deployed HEAD sha so the next deploy-check can show Case A/B correctly.
+    if (projectId) {
+      try {
+        const sha = execSync('git rev-parse HEAD', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
+        const state = loadDeployState();
+        state[projectId] = { sha: sha, at: new Date().toISOString() };
+        saveDeployState(state);
+      } catch (_) {}
+    }
 
+    return { success: true, message: 'Deploy complete!' };
   } catch (err) {
     const msg = err.stderr ? err.stderr.toString() : err.message;
     event.sender.send('deploy-progress', { step: 'error', status: 'error', message: msg });

@@ -413,9 +413,29 @@ function closeDeployModal() {
 async function openDeployModal() {
   if (!activeProject) return;
   deployModal.style.display = 'flex';
-  deployModalBody.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-dim)">Checking deploy status...</div>';
 
-  var check = await window.api.deployCheck(activeProject.path);
+  // B2: re-sync + re-discover before showing modal, so any external pushes are reflected
+  // in both the sidebar and the deploy-check we're about to run. Network call ~1–2s.
+  deployModalBody.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-dim)">Syncing latest from GitHub…</div>';
+  try {
+    await window.api.syncProjects();
+    var fresh = await window.api.discoverProjects();
+    if (Array.isArray(fresh)) {
+      projects = fresh;
+      var updated = projects.find(function(p) { return p.id === activeProject.id; });
+      if (updated) activeProject = updated;
+      renderProjects();
+      // Restore active highlight after re-render
+      document.querySelectorAll('.project-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.id === activeProject.id);
+      });
+    }
+  } catch (_) {
+    // Sync failure is non-fatal — continue with whatever local state we have
+  }
+
+  deployModalBody.innerHTML = '<div style="text-align:center; padding:20px; color:var(--text-dim)">Checking deploy status…</div>';
+  var check = await window.api.deployCheck(activeProject.path, activeProject.id);
 
   if (!check.claspInstalled) {
     deployModalBody.innerHTML = renderSetupNeeded('clasp CLI가 설치되어 있지 않습니다.', '터미널에서 실행: <code>npm install -g @google/clasp</code>');
@@ -432,7 +452,7 @@ async function openDeployModal() {
     return;
   }
 
-  // Ready to deploy — show diff preview
+  // Ready to deploy — show preview with HEAD info + Case A/B
   renderDeployPreview(check);
 }
 
@@ -472,20 +492,68 @@ async function saveScriptId() {
 }
 
 function renderDeployPreview(check) {
-  var diffDisplay = check.diff || '(no changes detected)';
-  var filesHtml = check.files.length > 0
-    ? check.files.map(function(f) { return '<div class="deploy-step"><span class="deploy-step-icon">\u{1F4C4}</span><span class="deploy-step-text">' + escapeHtml(f) + '</span></div>'; }).join('')
-    : '<div style="color:var(--text-dim); padding:8px 0">No uncommitted changes — deploying current state</div>';
+  // Head line — always shown so the user knows WHICH commit is about to deploy.
+  var headShort = check.headSha ? check.headSha.slice(0, 7) : '???????';
+  var headLine =
+    '<div style="margin:10px 0 14px; padding:10px 12px; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.3); border-radius:6px;">'
+    + '<div style="font-size:11px; text-transform:uppercase; letter-spacing:0.06em; color:var(--text-dim); margin-bottom:4px">Deploying HEAD</div>'
+    + '<div><span style="font-family:var(--font-mono); color:var(--accent-blue)">' + escapeHtml(headShort) + '</span> '
+    + '<span style="color:var(--text-primary)">' + escapeHtml(check.headSubject || '') + '</span></div>'
+    + '</div>';
+
+  // Body branches into 3 cases.
+  var bodyHtml;
+  if (check.upToDate) {
+    // Case A — Apps Script is already at this commit
+    bodyHtml =
+      '<div style="padding:12px 14px; background:rgba(34,197,94,0.1); border:1px solid rgba(34,197,94,0.35); border-radius:6px; color:#86efac;">'
+      + '✓ Apps Script is already at commit <span style="font-family:var(--font-mono)">' + escapeHtml(headShort) + '</span>. '
+      + '<span style="opacity:0.85">No deploy needed — current state matches the live version.</span>'
+      + '</div>';
+  } else if (!check.lastDeployedSha) {
+    // First deploy via gas-commander (no record yet)
+    bodyHtml =
+      '<div style="padding:12px 14px; background:rgba(99,102,241,0.08); border:1px solid rgba(99,102,241,0.3); border-radius:6px; color:#c7d2fe;">'
+      + 'No prior deploy recorded for this project. All clasp-tracked files will be pushed.'
+      + '</div>';
+  } else {
+    // Case B — commits/files since last deploy
+    var prevShort = check.lastDeployedSha.slice(0, 7);
+    var commitsHtml = (check.commitsSinceDeploy || []).map(function(c) {
+      return '<div style="padding:3px 0; font-size:12px;">'
+        + '<span style="font-family:var(--font-mono); color:var(--text-dim)">' + escapeHtml(c.sha.slice(0, 7)) + '</span> '
+        + '<span style="color:var(--text-primary)">' + escapeHtml(c.subject) + '</span>'
+        + '</div>';
+    }).join('');
+    var filesHtml = (check.filesChangedSinceDeploy || []).map(function(f) {
+      return '<div class="deploy-step"><span class="deploy-step-icon">\u{1F4C4}</span><span class="deploy-step-text">' + escapeHtml(f) + '</span></div>';
+    }).join('');
+    bodyHtml =
+      '<div style="margin:6px 0 12px"><div style="font-weight:600; margin-bottom:6px">Commits since last deploy <span style="font-weight:400; color:var(--text-dim); font-family:var(--font-mono); font-size:12px">(' + escapeHtml(prevShort) + ')</span>:</div>'
+      + (commitsHtml || '<div style="color:var(--text-dim); font-size:12px">(none)</div>')
+      + '</div>'
+      + '<div style="margin:6px 0"><div style="font-weight:600; margin-bottom:6px">Files to push:</div>'
+      + (filesHtml || '<div style="color:var(--text-dim); font-size:12px">(no file diff)</div>')
+      + '</div>';
+  }
+
+  // Uncommitted-changes warning — clasp push DOES upload the on-disk state, so any
+  // uncommitted edits silently ride along. Surface this so the user can commit first.
+  var uncommittedHtml = check.hasUncommitted
+    ? '<div style="margin-top:10px; padding:8px 10px; background:rgba(234,164,75,0.12); border:1px solid rgba(234,164,75,0.4); border-radius:4px; color:#fbbf77; font-size:12px;">'
+      + '⚠ Working tree has uncommitted changes — these <strong>will be pushed too</strong>. Commit first if you want a clean deploy.'
+      + '</div>'
+    : '';
 
   deployModalBody.innerHTML = '<div>'
     + '<div style="font-weight:600; margin-bottom:8px">Script ID: <span style="color:var(--accent-blue); font-family:var(--font-mono); font-size:12px">' + escapeHtml(check.scriptId || '') + '</span></div>'
-    + '<div style="font-weight:600; margin-bottom:8px">Changed files:</div>'
-    + filesHtml
-    + '<div class="deploy-diff">' + escapeHtml(diffDisplay) + '</div>'
+    + headLine
+    + bodyHtml
+    + uncommittedHtml
     + '<div id="deployProgress"></div>'
     + '<div class="deploy-actions" id="deployActions">'
     + '<button class="btn-cancel" onclick="closeDeployModal()">Cancel</button>'
-    + '<button class="btn-deploy" onclick="executeDeploy()">Deploy Now</button>'
+    + '<button class="btn-deploy" onclick="executeDeploy()">' + (check.upToDate ? 'Re-deploy Anyway' : 'Deploy Now') + '</button>'
     + '</div></div>';
 }
 
@@ -493,7 +561,7 @@ async function executeDeploy() {
   var actionsEl = document.getElementById('deployActions');
   actionsEl.innerHTML = '<span style="color:var(--text-dim)">Deploying...</span>';
 
-  var result = await window.api.deployExecute(activeProject.path, '');
+  var result = await window.api.deployExecute(activeProject.path, activeProject.id, '');
 
   if (result.success) {
     actionsEl.innerHTML = '<span style="color:var(--accent-green); font-weight:600">\u2705 ' + result.message + '</span>'
