@@ -254,7 +254,10 @@ function probeForge(project) {
 function probePython(project) {
   const errors = [];
   const ghWhich = execCapture('which gh', {});
-  let cronRow, nextRow;
+  // Initialize nextRow to a neutral fallback so the `gh run list` error branch
+  // (which doesn't reassign nextRow) doesn't leak `undefined` into the rows array.
+  let cronRow;
+  let nextRow = { label: 'Next run', value: '—', level: 'neutral' };
 
   if (!ghWhich.ok) {
     cronRow = { label: 'Last cron', value: 'gh not installed', level: 'bad' };
