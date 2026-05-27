@@ -547,11 +547,15 @@ ipcMain.handle('deploy-execute', async (event, { projectPath, projectId, descrip
       try {
         const sha = execSync('git rev-parse HEAD', { cwd: projectPath, stdio: 'pipe' }).toString().trim();
         const state = loadDeployState();
-        const prev = state[projectId] || {};
+        // Save what we just deployed to — no fallback to prev.deploymentId.
+        // The prior fallback masked a real bug: when the renderer's stale-stored
+        // case fell through without -i, the new deployment ID couldn't always be
+        // parsed from output and we'd preserve the (now-stale) previous ID
+        // forever, breaking URL stability on next deploy.
         state[projectId] = {
           sha: sha,
           at: new Date().toISOString(),
-          deploymentId: finalDeploymentId || prev.deploymentId || null
+          deploymentId: finalDeploymentId
         };
         saveDeployState(state);
       } catch (_) {}

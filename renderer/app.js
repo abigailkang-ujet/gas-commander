@@ -784,7 +784,13 @@ function renderDeployPreview(check) {
     pendingDeploymentId = stored;
     targetHtml = renderTargetBlock(stored, 'Updating existing deployment (URL stays)', 'rgba(34,197,94,0.1)', 'rgba(34,197,94,0.35)', '#86efac');
   } else if (stored && !storedStillExists) {
-    targetHtml = renderTargetBlock(stored, 'Stored deployment not found upstream — will create new', 'rgba(234,164,75,0.12)', 'rgba(234,164,75,0.4)', '#fbbf77');
+    // Stored deployment isn't in clasp's visible list — could be archived but
+    // still functional. Pin to it anyway; if clasp errors out, the failure is
+    // visible to the user. Without this, the modal silently fell through and
+    // created a new deployment on every click (the bug that produced the @131
+    // duplicate after the original AKfycbzF was archived).
+    pendingDeploymentId = stored;
+    targetHtml = renderTargetBlock(stored, 'Stored deployment not in current clasp list (possibly archived). Will attempt to update.', 'rgba(234,164,75,0.12)', 'rgba(234,164,75,0.4)', '#fbbf77');
   } else if (available.length === 1) {
     pendingDeploymentId = available[0].id;
     targetHtml = renderTargetBlock(available[0].id, 'Will update existing deployment (URL stays) · @' + available[0].version, 'rgba(34,197,94,0.1)', 'rgba(34,197,94,0.35)', '#86efac');
